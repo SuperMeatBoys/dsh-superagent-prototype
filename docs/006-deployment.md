@@ -5,7 +5,7 @@ Use this guide to install, configure and operate dsh-superagent. It covers accou
 ## What runs
 
 - **A dedicated DeepSeek Harness profile**, called `superagent` in this guide. Create it from the Web profile template. It loads the bundle and serves its panel on `127.0.0.1`. Keep it separate from the profile you work in: the plugin changes process-wide `PATH` and git settings, and its process needs independent restarts and upgrades.
-- **An agent GitHub account.** The agent comments, pushes branches and opens pull requests as this account, through a GitHub CLI signed in only as that account.
+- **An agent GitHub or GitLab account.** The agent comments, pushes branches and opens pull requests or merge requests as this account, through a source CLI (`gh` or `glab`) signed in only as that account.
 - **Optional:** a Feishu bot for chat requests.
 
 Plugin configuration holds the state directory and machine limits. Use the panel for everything else: Sources for the repository and accounts, Policy for allowed lists, and Execution for worker directories and commands.
@@ -21,7 +21,7 @@ Both presets run with `danger-full-access` as the operator's OS user and read me
 ## Prerequisites
 
 - Node.js 22.19+ or 24+, pnpm, git 2.32+, Python 3.8+ and tmux
-- GitHub CLI (`gh`) 2.48 or later. Source CLI fields must point to `gh` or `lark-cli` wrappers; the host relies on their subcommands and output formats.
+- GitHub CLI (`gh`) 2.48 or later, and/or GitLab CLI (`glab`) 1.126 or later. Source CLI fields must point to `gh`, `glab` or `lark-cli` wrappers; the host relies on their subcommands and output formats.
 - A repository on github.com; GitHub Enterprise Server is not supported. To create a checkout per Ticket, keep a local clone from which the prepare command can add worktrees. Install `git-lfs` if that repository uses Git LFS.
 - A model provider configured for DeepSeek Harness. dsh-superagent uses the profile's default model unless the Eval or Execution settings name another.
 - For Feishu: `lark-cli` (tested with 1.0.90) and a Feishu or Lark app with a bot
@@ -45,6 +45,24 @@ Both presets run with `danger-full-access` as the operator's OS user and read me
    ```
 
    Sign in as the agent account; the last command prints its login. dsh-superagent reads the login the same way.
+
+### Agent GitLab account
+
+1. Create a GitLab user account for the agent and add it to the project with the Developer role or higher. A project access token is not enough: dsh-superagent reads the account's mentions and notes.
+2. Create a personal access token for that account with `api` and `write_repository` scopes, then give it its own CLI configuration:
+
+   ```sh
+   mkdir -p ~/.local/bin
+   cat > ~/.local/bin/glab-agent <<'EOF'
+   #!/bin/sh
+   GLAB_CONFIG_DIR="$HOME/.config/glab-agent" exec glab "$@"
+   EOF
+   chmod +x ~/.local/bin/glab-agent
+   glab-agent auth login --hostname gitlab.example.com --stdin < token.txt
+   glab-agent api --hostname gitlab.example.com user
+   ```
+
+   The last command prints the agent's GitLab username. Keep the token out of the config file and the chat; `--stdin` reads it from a 0600 file you delete afterwards.
 
 ### Feishu bot (optional)
 
@@ -144,7 +162,7 @@ Check dsh-superagent: run `scripts/dsh-superagent --profile superagent status` i
 
 Setup must succeed before polling or work starts. Overview lists missing requirements and links to their settings. A settings change runs setup again. If you fix something outside the application, such as CLI authentication, choose **Check again**.
 
-1. **Sources.** Set the GitHub repository (`owner/name`) and agent CLI, for example `/home/me/.local/bin/gh-agent`. Requests normally arrive through the agent account's notifications. A new Issue or comment mentioning the account arrives on the next poll; adding a mention by editing an existing Issue body does not. Post a new comment instead. For Feishu, set the bot CLI, chats, each chat's receive-all or mentions-only mode, and whether to receive direct messages.
+1. **Sources.** Set the GitHub repository (`owner/name`) and agent CLI (`gh-agent`) and/or the GitLab instance URL, project (`group/project`), and agent CLI (`glab-agent`), for example `/home/me/.local/bin/glab-agent`. GitHub requests normally arrive through the agent account's notifications; a new Issue or comment mentioning the account arrives on the next poll, while a mention added by editing an existing body does not. GitLab polls the project's Issues, merge requests and notes. For Feishu, set the bot CLI, chats, each chat's receive-all or mentions-only mode, and whether to receive direct messages.
 2. **Policy.** The two example rules can be edited or removed. Under **On each Source**, add the GitHub accounts and Feishu users who may ask for work; until a list has someone, no request can become a Ticket. With Feishu, a chat can be chosen to sync the list from, at startup and on **Sync now**.
 3. **Execution.** The directory root and a prepare command. To give each Ticket a checkout of the repository:
 
@@ -228,7 +246,7 @@ A file in `worker-bin` or `worker-gitconfig` that dsh-superagent did not write s
 
 ## Try it
 
-From an allowed GitHub account, open an Issue or post a comment containing `@<agent login> <request>`. Within a polling interval (one minute by default), Overview should show a Ticket. The agent acknowledges the request, works in its own Session and directory, and delivers in the original conversation. For Feishu, mention the bot in a configured chat.
+From an allowed GitHub or GitLab account, open an Issue or post a comment/note containing `@<agent login> <request>`. Within a polling interval (one minute by default), Overview should show a Ticket. The agent acknowledges the request, works in its own Session and directory, and delivers in the original conversation as a pull request or merge request. For Feishu, mention the bot in a configured chat.
 
 ## Upgrade
 

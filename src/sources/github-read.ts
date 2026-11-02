@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { ThreadFact } from '../core/index.ts'
 import { validItems, type Commands, type Tally } from '../infra/commands.ts'
 import { CommentSchema, IssueSchema, isHumanLogin, reviewPlace, type GithubComment } from './github-trigger.ts'
+import { readGitlabRepositoryPath } from './gitlab-read.ts'
 import type { ContextMessage, ThreadContext } from './kind.ts'
 
 const CheckSchema = z.looseObject({ name: z.string(), status: z.string(), conclusion: z.string().nullable() })
@@ -44,8 +45,9 @@ export function ciFact(counts: { failed: number; running: number }): ThreadFact 
   return { label: 'CI', value: { zh: '通过', en: 'passed' } }
 }
 
-/** Reads a non-hidden file or directory listing from the repository's default branch via the GitHub API; hidden entries and `node_modules` are rejected. */
-export async function readRepositoryPath(commands: Commands, path: string, kind: 'file' | 'directory'): Promise<string> {
+/** Reads a non-hidden file or directory listing from the repository's default branch; `source` names the Source the read belongs to, else GitHub is preferred. */
+export async function readRepositoryPath(commands: Commands, path: string, kind: 'file' | 'directory', source?: string): Promise<string> {
+  if (source === 'gitlab' || (!commands.deployment.github.cli && commands.deployment.gitlab)) return readGitlabRepositoryPath(commands, path, kind)
   const parts = path.split('/').filter(part => part && part !== '.')
   if (parts.some(part => part === '..' || part.startsWith('.') || part === 'node_modules')) throw new Error('Only non-hidden repository source paths are available')
   const resource = `contents/${parts.map(encodeURIComponent).join('/')}`

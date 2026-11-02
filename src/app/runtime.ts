@@ -34,6 +34,7 @@ import type { LinkTarget } from './views/records.ts'
 import { candidateCard, repliedTo, sourceLink, type LinkHost } from './links.ts'
 import { eventNotice, followupNotice } from './notices.ts'
 import { pullEndNotices } from '../sources/github-pull.ts'
+import { mrEndNotices } from '../sources/gitlab-mr.ts'
 import { HealthBoard } from '../infra/health.ts'
 import { Outbox } from './outbox.ts'
 import { Passes } from './passes.ts'
@@ -100,7 +101,9 @@ export class Runtime extends Service implements SourceHost {
       const deployed = () => setup.configured()
         ? environmentOf({ deployment: setup.deployment, sources: this.sources, settings: store.settings() }) : undefined
       const feishu = () => setup.configured() && !!setup.deployment.feishu
-      const prompts = this.prompts = new Prompts(store, () => machine.promptMaxChars.get(), deployed, feishu)
+      const github = () => setup.configured() && !!setup.deployment.github.cli
+      const gitlab = () => setup.configured() && !!setup.deployment.gitlab
+      const prompts = this.prompts = new Prompts(store, () => machine.promptMaxChars.get(), deployed, feishu, github, gitlab)
       const masterId = this.masterId = store.get(KV.runtime.masterId) ?? `orchestrator-${key(machine.stateDir)}`
       store.set(KV.runtime.masterId, masterId)
       const commands = this.commands = new Commands(() => setup.deployment, setup.commandEnvironment, this.lifetime)
@@ -147,8 +150,11 @@ export class Runtime extends Service implements SourceHost {
           // Notify the ticket's conversations whenever it ends via a pull request.
           const ended = event.type === 'ticket.ended' ? store.tickets.get(event.data.ticketId) : undefined
           if (ended && setup.configured()) {
-            const request = store.triggers.get(ended.origin.triggerId)?.text ?? ''
-            for (const message of pullEndNotices(ended, request, setup.deployment.repository)) outbox.send(message)
+            const origin = store.triggers.get(ended.origin.triggerId)
+            const request = origin?.text ?? ''
+            const notices = origin?.source === 'gitlab' ? mrEndNotices(ended, request, setup.deployment)
+              : pullEndNotices(ended, request, setup.deployment.repository)
+            for (const message of notices) outbox.send(message)
           }
         } })
       // Update the `evals` health entry on every pass if an evaluation failed as unavailable within the last hour.
@@ -161,6 +167,7 @@ export class Runtime extends Service implements SourceHost {
         get setupProblem() { return setup.problem }, get feishuProblem() { return setup.feishuProblem }, receive: trigger => passes.receive(trigger) }
       this.toolHost = { context: ctx, engine, store, prompts, sessions, settings: this.settings, assessor, resources,
         get github() { return runtime.context({ kind: 'github', health: ['github'] }) },
+        get gitlab() { return runtime.context({ kind: 'gitlab', health: ['gitlab'] }) },
         requestPass: () => { passes.request() }, sendReplies: () => outbox.sent(),
         quietly: run => { this.quiet++; try { return run() } finally { this.quiet-- } } }
       this.ready = this.initialize()
@@ -182,7 +189,8 @@ export class Runtime extends Service implements SourceHost {
   get feishuProblem(): SetupProblem | undefined { return this.setup.feishuProblem }
   links(): LinkTarget {
     const resolved = this.setup.configured() ? this.setup.deployment : undefined
-    const links = resolved ? { repository: resolved.repository, ...(resolved.feishu ? { feishu: resolved.feishu } : {}) } : {}
+    const links = resolved ? { repository: resolved.repository, ...(resolved.gitlab ? { gitlab: resolved.gitlab } : {}),
+      ...(resolved.feishu ? { feishu: resolved.feishu } : {}) } : {}
     return channel => this.sources.link(channel, links)
   }
   ticketEnvironment(ticket: Ticket): Variable[] {

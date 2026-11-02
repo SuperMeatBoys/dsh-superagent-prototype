@@ -64,6 +64,11 @@ export class Commands {
   constructor(private readonly resolved: () => Deployment, private readonly environment: Record<string, string | undefined>, private readonly signal: AbortSignal) {}
   get deployment(): Deployment { return this.resolved() }
   get repository(): string { return this.deployment.repository }
+  get gitlab(): NonNullable<Deployment['gitlab']> {
+    const gitlab = this.deployment.gitlab
+    if (!gitlab) throw new Error('The GitLab Source has no resolved project')
+    return gitlab
+  }
   withSignal(signal?: AbortSignal): Commands { return signal ? new Commands(this.resolved, this.environment, AbortSignal.any([this.signal, signal])) : this }
   async run(program: string, args: string[], cwd?: string): Promise<string> {
     try {
@@ -95,6 +100,26 @@ export class Commands {
     const outside = /^\/|^[a-z]+:|(^|\/)\.\.?(\/|\?|$)/i.test(path)
     if (outside) throw new Error('GitHub calls are restricted to the configured repository')
     return path ? `repos/${this.repository}/${path}` : `repos/${this.repository}`
+  }
+  /** Runs the agent's GitLab CLI and parses its JSON output. */
+  async glab<T>(args: string[]): Promise<T> { return JSON.parse(await this.run(this.gitlab.cli, args)) as T }
+  /**
+   * Calls the GitLab API on a path within the configured project. `glab api` prepends `/api/v4` and picks the host from
+   * `--hostname`; the project is addressed by numeric ID so a renamed path never needs encoding here.
+   * @throws CliError with GitLab's HTTP status as `code` on failure.
+   */
+  async gitlabApi<T>(schema: z.ZodType<T>, path: string, ...flags: string[]): Promise<T>
+  async gitlabApi(path: string, ...flags: string[]): Promise<string>
+  async gitlabApi<T>(schema: z.ZodType<T> | string, ...rest: string[]): Promise<T | string> {
+    const args = (path: string, flags: string[]) => ['api', '--hostname', this.gitlab.host, this.gitlabPath(path), ...flags]
+    if (typeof schema === 'string') return this.run(this.gitlab.cli, args(schema, rest))
+    const [path = '', ...flags] = rest
+    return schema.parse(await this.glab(args(path, flags)))
+  }
+  private gitlabPath(path: string): string {
+    const outside = /^\/|^[A-Za-z][A-Za-z0-9+.-]*:|(^|\/)\.\.?(\/|\?|$)/.test(path)
+    if (outside) throw new Error('GitLab calls are restricted to the configured project')
+    return `projects/${this.gitlab.projectId}${path ? `/${path}` : ''}`
   }
   /**
    * Runs the Feishu bot's `lark-cli` and returns the JSON `data` payload.

@@ -48,6 +48,8 @@ export const KV = {
     stream: family<{ since: string; started: Record<string, string>; etag?: string }, [stream: string]>('github-stream:'),
     branchCi: record<{ branch?: string; failures?: string[]; revision: number }>('github-branch-ci'),
     ci: family<{ fingerprint: string; revision: number }, [number: number]>('github-ci:') },
+  /** GitLab Source: project-wide update cursor and per-issue/MR note cursor. */
+  gitlab: { since: record<string>('gitlab-since'), cursor: family<string, [thread: string]>('gitlab-cursor:') },
   /**
    * Feishu Source: known chats (`true` for direct messages); per-chat history cursor and active topics mapped from topic ID
    * to last-seen timestamp; and per-polled-thread seen message IDs and initialization flag.

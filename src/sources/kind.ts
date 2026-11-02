@@ -41,7 +41,7 @@ export interface SourcePolicyPart<P extends Record<string, unknown>> {
 }
 /** UI link for a channel address; `triggerId` names the Trigger whose own deep link is preferred when available. */
 export interface ChannelLink { url: string; label: Localized; triggerId?: string }
-export type ChannelLinks = Partial<Pick<Deployment, 'repository' | 'feishu'>>
+export type ChannelLinks = Partial<Pick<Deployment, 'repository' | 'gitlab' | 'feishu'>>
 /** Outbound messaging adapter for a source kind's threads. */
 export interface SourceChannel<C> {
   /** Whether a reply may still go to `address`; without it, every address may receive replies. */
@@ -85,6 +85,8 @@ export interface TriggerContext {
 export interface SourceKind<C extends Record<string, unknown> = Record<string, unknown>> {
   /** Stable ID; a default instance with the same ID exists when none is stored. */
   kind: string
+  /** Whether a fresh instance starts enabled; defaults to true. */
+  defaultEnabled?: boolean
   title: Localized
   description: Localized
   /** Read-only status facts derived from `deployment` (undefined while waiting for setup), keyed by field key. */

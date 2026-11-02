@@ -263,7 +263,7 @@ export class MasterAssessor implements Assessor {
         body = JSON.stringify({ images: references, next_read: next, ...result.body })
       }
       else {
-        body = await readRepositoryPath(commands, read.path!, read.resource === 'directory' ? 'directory' : 'file')
+        body = await readRepositoryPath(commands, read.path!, read.resource === 'directory' ? 'directory' : 'file', trigger.source)
       }
       snapshots.set(cacheKey, body)
       return textPage(read.resource, body, read.offset, 4000)
